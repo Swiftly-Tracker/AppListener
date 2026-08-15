@@ -1,0 +1,14 @@
+[steam]
+username = "your_steam_username"
+password = "your_steam_password"
+remember_password = true
+
+[github]
+token = "your_default_github_token"
+
+[apps.730]
+branch = "public"
+repo = "swiftly-tracker/cs2-dumps"
+dispatch_repo = "swiftly-tracker/cs2-dumps"
+workflow_id = "update.yml"
+git_ref = "main"
