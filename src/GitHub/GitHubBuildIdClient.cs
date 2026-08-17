@@ -55,6 +55,24 @@ public sealed class GitHubBuildIdClient
         return buildId;
     }
 
+    public async Task<bool> IsWorkflowRunningAsync(string dispatchRepo, string workflowId, string token, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"repos/{dispatchRepo}/actions/workflows/{workflowId}/runs?per_page=10");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning(
+                "Failed to list runs for workflow {WorkflowId} on {Repo}: {Status}",
+                workflowId, dispatchRepo, response.StatusCode);
+            return false;
+        }
+
+        var runs = await response.Content.ReadFromJsonAsync<GitHubWorkflowRunsResponse>(ct).ConfigureAwait(false);
+        return runs?.WorkflowRuns?.Any(run => run.Status is "in_progress" or "queued" or "waiting" or "requested" or "pending") ?? false;
+    }
+
     public async Task<bool> DispatchWorkflowAsync(string dispatchRepo, string workflowId, string workflowRef, string token, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"repos/{dispatchRepo}/actions/workflows/{workflowId}/dispatches")
@@ -86,5 +104,17 @@ public sealed class GitHubBuildIdClient
     {
         [JsonPropertyName("message")]
         public string? Message { get; set; }
+    }
+
+    private sealed class GitHubWorkflowRunsResponse
+    {
+        [JsonPropertyName("workflow_runs")]
+        public List<GitHubWorkflowRun>? WorkflowRuns { get; set; }
+    }
+
+    private sealed class GitHubWorkflowRun
+    {
+        [JsonPropertyName("status")]
+        public string? Status { get; set; }
     }
 }

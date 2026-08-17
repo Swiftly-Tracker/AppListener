@@ -91,6 +91,14 @@ public sealed class WatcherService : BackgroundService
                 "App {AppId} ({Name}) is out of date: Steam has BuildID {SteamBuildId}, {Repo} has {GithubBuildId}.",
                 app.AppId, info.Name, steamBuildId, app.Repo, githubBuildId);
 
+            if (await _github.IsWorkflowRunningAsync(app.DispatchRepo, app.WorkflowId, token, ct).ConfigureAwait(false))
+            {
+                _logger.LogInformation(
+                    "Workflow {WorkflowId} on {Repo} is already running; skipping dispatch.",
+                    app.WorkflowId, app.DispatchRepo);
+                return;
+            }
+
             if (await _github.DispatchWorkflowAsync(app.DispatchRepo, app.WorkflowId, app.GitRef, token, ct).ConfigureAwait(false))
             {
                 _lastDispatchedBuildId[app.AppId] = steamBuildId;
