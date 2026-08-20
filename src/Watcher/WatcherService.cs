@@ -9,6 +9,7 @@ namespace AppListener.Watcher;
 public sealed class WatcherService : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(30);
 
     private readonly SteamSession _steam;
     private readonly GitHubBuildIdClient _github;
@@ -28,25 +29,46 @@ public sealed class WatcherService : BackgroundService
     {
         try
         {
-            await _steam.ConnectAsync(stoppingToken).ConfigureAwait(false);
-
-            var byAppId = _config.Apps.ToDictionary(app => app.AppId);
-
-            foreach (var app in _config.Apps)
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await CheckAppAsync(app, stoppingToken).ConfigureAwait(false);
-            }
-
-            await foreach (var appId in _steam.WatchForChangesAsync(PollInterval, stoppingToken))
-            {
-                if (byAppId.TryGetValue(appId, out var app))
+                try
                 {
-                    await CheckAppAsync(app, stoppingToken).ConfigureAwait(false);
+                    await _steam.ConnectAsync(stoppingToken).ConfigureAwait(false);
+
+                    while (!stoppingToken.IsCancellationRequested)
+                    {
+                        if (!_steam.IsLoggedOn)
+                        {
+                            throw new IOException("Lost connection to Steam.");
+                        }
+
+                        foreach (var app in _config.Apps)
+                        {
+                            await CheckAppAsync(app, stoppingToken).ConfigureAwait(false);
+                        }
+
+                        await Task.Delay(PollInterval, stoppingToken).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Steam watch loop faulted; reconnecting in {Delay}.", ReconnectDelay);
+
+                    try
+                    {
+                        await Task.Delay(ReconnectDelay, stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
             }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
+
             _logger.LogInformation("Shutdown requested.");
         }
         finally

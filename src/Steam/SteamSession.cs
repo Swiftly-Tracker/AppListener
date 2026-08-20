@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using AppListener.Configuration;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
@@ -24,7 +23,6 @@ public sealed class SteamSession : IAsyncDisposable
     private TaskCompletionSource? _connected;
     private TaskCompletionSource<SteamUser.LoggedOnCallback>? _loggedOn;
 
-    private uint _lastChangeNumber;
     private bool _disposed;
 
     public SteamSession(SteamConfig config, ILogger<SteamSession> logger)
@@ -62,7 +60,7 @@ public sealed class SteamSession : IAsyncDisposable
 
     public async Task<PicsAppInfo?> GetAppInfoAsync(uint appId, CancellationToken ct)
     {
-        var tokens = await _apps.PICSGetAccessTokens(appId, null).ToTask().WaitAsync(ct).ConfigureAwait(false);
+        var tokens = await _apps.PICSGetAccessTokens(appId, null).ToTask().WaitAsync(ConnectTimeout, ct).ConfigureAwait(false);
 
         var request = new SteamApps.PICSRequest(appId);
         if (tokens.AppTokens.TryGetValue(appId, out var accessToken))
@@ -70,7 +68,7 @@ public sealed class SteamSession : IAsyncDisposable
             request.AccessToken = accessToken;
         }
 
-        var result = await _apps.PICSGetProductInfo(request, package: null).ToTask().WaitAsync(ct).ConfigureAwait(false);
+        var result = await _apps.PICSGetProductInfo(request, package: null).ToTask().WaitAsync(ConnectTimeout, ct).ConfigureAwait(false);
 
         if (result.Failed || result.Results == null)
         {
@@ -97,53 +95,6 @@ public sealed class SteamSession : IAsyncDisposable
         }
 
         return null;
-    }
-
-    public async IAsyncEnumerable<uint> WatchForChangesAsync(TimeSpan pollInterval, [EnumeratorCancellation] CancellationToken ct)
-    {
-        var first = true;
-
-        while (!ct.IsCancellationRequested)
-        {
-            SteamApps.PICSChangesCallback? result = null;
-
-            try
-            {
-                result = await _apps.PICSGetChangesSince(_lastChangeNumber).ToTask().WaitAsync(ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to poll the Steam PICS changelist.");
-            }
-
-            if (result != null)
-            {
-                _lastChangeNumber = result.CurrentChangeNumber;
-
-                if (!first)
-                {
-                    foreach (var appId in result.AppChanges.Keys)
-                    {
-                        yield return appId;
-                    }
-                }
-
-                first = false;
-            }
-
-            try
-            {
-                await Task.Delay(pollInterval, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-        }
     }
 
     private async Task LogOnAsync(CancellationToken ct)
