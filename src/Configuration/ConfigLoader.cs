@@ -7,10 +7,15 @@ public static class ConfigLoader
 {
     public static AppListenerConfig Load(string path)
     {
+        path = Path.GetFullPath(path);
+
         if (!File.Exists(path))
         {
-            throw new FileNotFoundException($"Config file not found, it should be at '{path}'.", path);
+            throw new FileNotFoundException(
+                $"Config file not found, it should be at '{path}' (AppListener lives in '{AppContext.BaseDirectory}').", path);
         }
+
+        Console.WriteLine($"Loading config from '{path}'");
 
         var text = File.ReadAllText(path);
         var model = TomlSerializer.Deserialize<TomlTable>(text)
